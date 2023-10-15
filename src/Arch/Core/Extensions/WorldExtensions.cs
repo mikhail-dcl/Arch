@@ -37,7 +37,7 @@ public static class WorldExtensions
             ref var entityFirstElement = ref chunk.Entity(0);
             foreach(var entityIndex in chunk)
             {
-                ref readonly var entity = ref Unsafe.Add(ref entityFirstElement, entityIndex);
+                var entity = Unsafe.Add(ref entityFirstElement, entityIndex);
                 list.Add(entity);
             }
         }
@@ -126,7 +126,7 @@ public static class WorldExtensions
         }
     }
 
-        /// <summary>
+    /// <summary>
     ///     Adds a <see cref="IList{T}"/> of new components to the <see cref="Entity"/> and moves it to the new <see cref="Archetype"/>.
     /// </summary>
     /// <param name="entity">The <see cref="Entity"/>.</param>
@@ -168,6 +168,7 @@ public static class WorldExtensions
         }
 
         world.Move(entity, oldArchetype, newArchetype, out _);
+
 #if EVENTS
         for (var i = 0; i < components.Count; i++)
         {

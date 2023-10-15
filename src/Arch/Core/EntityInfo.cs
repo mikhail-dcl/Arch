@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Arch.Core;
 using Arch.Core.Extensions;
 using Arch.Core.Extensions.Internal;
+using Arch.LowLevel.Jagged;
 
 namespace Arch.Core;
 
@@ -63,7 +64,7 @@ internal ref struct EntitySlot
     ///     A reference to its <see cref="Slot"/>.
     /// </summary>
     public Slot Slot;
-    
+
     /// <summary>
     ///     Initializes a new instance of the <see cref="EntityInfo"/> struct.
     /// </summary>
@@ -86,26 +87,40 @@ internal class EntityInfoStorage
     /// <summary>
     ///     The <see cref="Entity"/> versions in an jagged array.
     /// </summary>
-    internal JaggedArray<int> Versions { [MethodImpl(MethodImplOptions.AggressiveInlining)] get;}
+    internal JaggedArray<int> Versions { [MethodImpl(MethodImplOptions.AggressiveInlining)] get; set; }
 
     /// <summary>
     ///     The <see cref="Entity"/> <see cref="Archetype"/>s in an jagged array.
     /// </summary>
-    internal JaggedArray<Archetype> Archetypes { [MethodImpl(MethodImplOptions.AggressiveInlining)] get; }
+    internal JaggedArray<Archetype> Archetypes { [MethodImpl(MethodImplOptions.AggressiveInlining)] get; set; }
 
     /// <summary>
     ///     The <see cref="Entity"/> <see cref="Slot"/>s in an jagged array.
     /// </summary>
-    internal JaggedArray<Slot> Slots { [MethodImpl(MethodImplOptions.AggressiveInlining)] get; }
+    internal JaggedArray<Slot> Slots { [MethodImpl(MethodImplOptions.AggressiveInlining)] get; set; }
+
+    /*
+/// <summary>
+///     Initializes the static values of <see cref="JaggedArray{T}"/>.
+/// </summary>
+static JaggedArray()
+{
+    var cpuL1CacheSize = 16_000; // In bytes
+    var idealSize = cpuL1CacheSize / Unsafe.SizeOf<T>();
+
+    _chunkSize = MathExtensions.RoundToPowerOfTwo(idealSize);
+    _chunkSizeMinusOne = _chunkSize - 1;
+}*/
 
     /// <summary>
     ///     Initializes a new instance of the <see cref="EntityInfoStorage"/> class.
     /// </summary>
     internal EntityInfoStorage()
     {
-        Versions = new JaggedArray<int>(-1);
-        Archetypes = new JaggedArray<Archetype>();
-        Slots = new JaggedArray<Slot>(new Slot(-1,-1));
+        var cpuL1CacheSize = 16_000;
+        Versions = new JaggedArray<int>(cpuL1CacheSize / Unsafe.SizeOf<int>(), -1, 256);
+        Archetypes = new JaggedArray<Archetype>(cpuL1CacheSize / IntPtr.Size, 256);
+        Slots = new JaggedArray<Slot>(cpuL1CacheSize /  Unsafe.SizeOf<Slot>(), new Slot(-1,-1), 256);
     }
 
     /// <summary>
@@ -131,7 +146,7 @@ internal class EntityInfoStorage
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Has(int id)
     {
-        return Versions.TryGetValue(id, out _);
+        return Versions.TryGetValue(id, out int _);
     }
 
     /// <summary>
@@ -253,12 +268,12 @@ internal class EntityInfoStorage
             //for (var index = upper; index >= 0; --index)
             for(var index = 0; index <= upper; index++)
             {
-                ref readonly var entity = ref Unsafe.Add(ref entityFirstElement, index);
-                
+                var entity = Unsafe.Add(ref entityFirstElement, index);
+
                 // Update entity info
                 Move(entity.Id, newArchetype, newArchetypeSlot);
                 newArchetypeSlot++;
-                
+
                 if (newArchetypeSlot.Index >= newArchetype.EntitiesPerChunk)
                 {
                     newArchetypeSlot.Index = 0;
@@ -314,256 +329,5 @@ internal class EntityInfoStorage
     }
 }
 
-/// <summary>
-///     The <see cref="JaggedArray{T}"/> class
-///     represents an jagged array that stores <see cref="EntityInfo"/> for quickly acessing it.
-/// </summary>
-internal class JaggedArray<T>
-{
-    /// <summary>
-    ///     How large a chunk should be. This value will be a power of 2.
-    /// </summary>
-    private static readonly int _chunkSize;
-    private static readonly int _chunkSizeMinusOne;
 
-    /// <summary>
-    ///     The jagged array storing the <see cref="EntityInfo"/>.
-    /// </summary>
-    private T[][] _entityInfos = Array.Empty<T[]>();
-
-    /// <summary>
-    ///     The fill value for new initialized arrays.
-    /// </summary>
-    private T filler;
-
-    /// <summary>
-    ///     The currently largest id inside this <see cref="JaggedArray{T}"/>, for trimming purposes.
-    /// </summary>
-    private int _largestId;
-
-    /// <summary>
-    ///     Initializes the static values of <see cref="JaggedArray{T}"/>.
-    /// </summary>
-    static JaggedArray()
-    {
-        var cpuL1CacheSize = 16_000; // In bytes
-        var idealSize = cpuL1CacheSize / Unsafe.SizeOf<T>();
-
-        _chunkSize = MathExtensions.RoundToPowerOfTwo(idealSize);
-        _chunkSizeMinusOne = _chunkSize - 1;
-    }
-
-    /// <summary>
-    ///     Initializes a new instance of the <see cref="JaggedArray{T}"/> class.
-    /// <param name="filler">A default value which all slots will be filled with.</param>
-    /// </summary>
-    internal JaggedArray(T filler = default) : this(256, filler)
-    {
-    }
-
-    /// <summary>
-    ///     Initializes a new instance of the <see cref="JaggedArray{T}"/> class.
-    /// </summary>
-    /// <param name="filler">A default value which all slots will be filled with.</param>
-    /// <param name="capacity">The initial capacity.</param>
-    internal JaggedArray(int capacity, T filler = default)
-    {
-        EnsureCapacity(capacity);
-        this.filler = filler;
-    }
-
-    /// <summary>
-    ///     Adds a new <see cref="EntityInfo"/> to a given index.
-    /// </summary>
-    /// <param name="id">The index.</param>
-    /// <param name="entityInfo">The <see cref="EntityInfo"/>.</param>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Add(int id, T entityInfo)
-    {
-        this[id] = entityInfo;
-    }
-
-    /// <summary>
-    ///     Removes an <see cref="EntityInfo"/> from a given index.
-    ///     Replaces its value with the default one.
-    /// </summary>
-    /// <param name="id">The index.</param>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Remove(int id)
-    {
-        this[id] = filler;
-    }
-
-    /// <summary>
-    ///     Trys to return an <see cref="EntityInfo"/> from its index, if its set.
-    /// </summary>
-    /// <param name="id">The index.</param>
-    /// <param name="entityInfo">The <see cref="EntityInfo"/>.</param>
-    /// <returns>True if it was set, false if not.</returns>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool TryGetValue(int id, out T entityInfo)
-    {
-        // If the id is negative
-        if (id < 0)
-        {
-            entityInfo = filler;
-            return false;
-        }
-
-        IdToSlot(id, out var outerIndex, out var innerIndex);
-
-        // If the item is outside the array. Then it definetly doesn't exist
-        if (outerIndex > _entityInfos.Length)
-        {
-            entityInfo = filler;
-            return false;
-        }
-
-        ref var item = ref _entityInfos[outerIndex][innerIndex];
-
-        // If the item is the default then the nobody set its value.
-        if (EqualityComparer<T>.Default.Equals(item, filler))
-        {
-            entityInfo = filler;
-            return false;
-        }
-
-        entityInfo = item;
-        return true;
-    }
-
-    /// <summary>
-    ///     Converts the passed id to its inner and outer index ( or slot ) inside the <see cref="_entityInfos"/> array.
-    /// </summary>
-    /// <param name="id">The id.</param>
-    /// <param name="outerIndex">The outer index.</param>
-    /// <param name="innerIndex">The inner index.</param>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void IdToSlot(int id, out int outerIndex, out int innerIndex)
-    {
-        Debug.Assert(id >= 0, "Id cannot be negative.");
-
-        /* Instead of the '%' operator we can use logical '&' operator which is faster. But it requires the chunk size to be a power of 2. */
-        outerIndex = id / _chunkSize;
-        innerIndex = id & _chunkSizeMinusOne;
-    }
-
-    /// <summary>
-    ///     Ensures the capacity of this <see cref="JaggedArray"/> and resizes it correctly.
-    /// </summary>
-    /// <param name="capacity">The new capacity.</param>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void EnsureCapacity(int capacity)
-    {
-        if (capacity < _largestId)
-        {
-            return;
-        }
-
-        var currentSize = _entityInfos.Length;
-        var desiredSize = (capacity / _chunkSize) + 1;
-
-        Array.Resize(ref _entityInfos, desiredSize);
-
-        // Create the new arrays.
-        for (int i = currentSize; i < desiredSize; i++)
-        {
-            var array = new T[_chunkSize];
-            _entityInfos[i] = new T[_chunkSize];
-            Array.Fill(array, filler);
-        }
-
-        UpdateLargestId();
-    }
-
-    /// <summary>
-    ///     Trims this <see cref="JaggedArray"/> and releases unused resources.
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void TrimExcess()
-    {
-        var lastIndexWithNonDefaultValues = _entityInfos.Length - 1;
-        for (var i = lastIndexWithNonDefaultValues; i >= 0; i--)
-        {
-            if (ArrayContainsNonDefaultValues(_entityInfos[i]))
-            {
-                break;
-            }
-
-            lastIndexWithNonDefaultValues = i - 1;
-        }
-
-        Array.Resize(ref _entityInfos, lastIndexWithNonDefaultValues + 1);
-        UpdateLargestId();
-    }
-
-    /// <summary>
-    ///     Clears this <see cref="JaggedArray"/> and sets all values to the default one.
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Clear()
-    {
-        foreach (var array in _entityInfos)
-        {
-            Array.Fill(array, filler);
-        }
-    }
-
-    /// <summary>
-    ///     Updates the largest id.
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void UpdateLargestId()
-    {
-        _largestId = _entityInfos.Length * _chunkSize;
-    }
-
-    /// <summary>
-    ///     Checks if the passed <see cref="EntityInfo"/> array contains set values.
-    /// </summary>
-    /// <param name="array">The <see cref="EntityInfo"/> array to check.</param>
-    /// <returns></returns>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private bool ArrayContainsNonDefaultValues(T[] array)
-    {
-        foreach (var item in array)
-        {
-            if (!EqualityComparer<T>.Default.Equals(item, filler))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    ///     Returns a reference to a <see cref="EntityInfo"/> at an given index.
-    /// </summary>
-    /// <param name="id">The index.</param>
-    [SkipLocalsInit]
-    public ref T this[int id]
-    {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get
-        {
-            Debug.Assert(id >= 0, "Id cannot be negative");
-
-            EnsureCapacity(id);
-            IdToSlot(id, out var outerIndex, out var innerIndex);
-            return ref _entityInfos[outerIndex][innerIndex];
-        }
-    }
-
-    /// <summary>
-    ///     A explicit operator converting a <see cref="JaggedArray{T}"/> intance to its underlaying T[][] array.
-    /// </summary>
-    /// <param name="jaggedArray">The <see cref="JaggedArray{T}"/> instance.</param>
-    /// <returns>The underlaying T[][] array. </returns>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static explicit operator T[][](JaggedArray<T> jaggedArray)
-    {
-        return jaggedArray._entityInfos;
-    }
-}
 
