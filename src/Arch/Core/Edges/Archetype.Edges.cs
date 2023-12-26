@@ -32,7 +32,7 @@ public partial class Archetype
     /// <param name="index">The index.</param>
     /// <param name="archetype">The <see cref="Archetype"/>.</param>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal void AddAddEdgde(int index, Archetype archetype)
+    internal void AddAddEdge(int index, Archetype archetype)
     {
         _addEdges.Add(index, archetype);
     }
@@ -43,7 +43,7 @@ public partial class Archetype
     /// <param name="index">The index.</param>
     /// <param name="archetype">The <see cref="Archetype"/>.</param>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal void AddRemoveEdgde(int index, Archetype archetype)
+    internal void AddRemoveEdge(int index, Archetype archetype)
     {
         _removeEdges.Add(index, archetype);
     }
@@ -54,7 +54,7 @@ public partial class Archetype
     /// <param name="index">The index.</param>
     /// <returns>True or false.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal bool HasAddEdgde(int index)
+    internal bool HasAddEdge(int index)
     {
         return _addEdges.ContainsKey(index);
     }
@@ -65,7 +65,7 @@ public partial class Archetype
     /// <param name="index">The index.</param>
     /// <returns>True or false.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal bool HasRemoveEdgde(int index)
+    internal bool HasRemoveEdge(int index)
     {
         return _removeEdges.ContainsKey(index);
     }
@@ -119,7 +119,6 @@ public partial class Archetype
         _removeEdges.Remove(index);
     }
 
-    /// TODO: API to return a bucket from a jagged array, empty ones can be skipped -> Super fast iteration
     /// <summary>
     ///     Removes an edge for a certain <see cref="Archetype"/>.
     /// </summary>
@@ -127,33 +126,57 @@ public partial class Archetype
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void RemoveEdge(Archetype archetype)
     {
-        // Scan array for the archetype and remove it where it exists.
-        for (var index = 0; index < _addEdges.Capacity; index++)
+        for (var index = 0; index < _addEdges.Buckets; index++)
         {
-            if (!_addEdges.ContainsKey(index))
+            // Skip empty buckets
+            ref var bucket = ref _addEdges.GetBucket(index);
+            if (bucket.IsEmpty)
             {
                 continue;
             }
 
-            var edge = _addEdges[index];
-            if (edge == archetype)
+            // Search bucket for edge and remove it if found
+            for (var itemIndex = 0; itemIndex < bucket.Capacity; itemIndex++)
             {
-                RemoveAddEdge(index);
+                var edge = bucket[itemIndex];
+                if (edge != archetype)
+                {
+                    continue;
+                }
+
+                // Remove from bucket and if the removal caused it being trimmed, break the search and continue with the next
+                RemoveAddEdge((index * BucketSize) + itemIndex);
+                if (bucket.IsEmpty)
+                {
+                    break;
+                }
             }
         }
 
-        // Scan array for the archetype and remove it where it exists.
-        for (var index = 0; index < _removeEdges.Capacity; index++)
+        for (var index = 0; index < _removeEdges.Buckets; index++)
         {
-            if (!_removeEdges.ContainsKey(index))
+            // Skip empty buckets
+            ref var bucket = ref _removeEdges.GetBucket(index);
+            if (bucket.IsEmpty)
             {
                 continue;
             }
 
-            var edge = _removeEdges[index];
-            if (edge == archetype)
+            // Search bucket for edge and remove it if found
+            for (var itemIndex = 0; itemIndex < bucket.Capacity; itemIndex++)
             {
-                RemoveRemoveEdge(index);
+                var edge = bucket[itemIndex];
+                if (edge != archetype)
+                {
+                    continue;
+                }
+
+                // Remove from bucket and if the removal caused it being trimmed, break the search and continue with the next
+                RemoveRemoveEdge((index * BucketSize) + itemIndex);
+                if (bucket.IsEmpty)
+                {
+                    break;
+                }
             }
         }
     }

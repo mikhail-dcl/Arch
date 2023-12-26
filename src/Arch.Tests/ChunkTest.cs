@@ -9,7 +9,7 @@ namespace Arch.Tests;
 ///     checks if the <see cref="Chunk"/>s work correctly.
 /// </summary>
 [TestFixture]
-public class ChunkTest
+public sealed class ChunkTest
 {
     private Chunk _chunk;
     private readonly ComponentType[] _types = { typeof(Transform), typeof(Rotation) };
@@ -38,7 +38,7 @@ public class ChunkTest
     }
 
     /// <summary>
-    ///     Checks if removing of entities form the chunk works correctly. 
+    ///     Checks if removing of entities form the chunk works correctly.
     /// </summary>
     [Test]
     public void ChunkRemove()
@@ -65,7 +65,7 @@ public class ChunkTest
     }
 
     /// <summary>
-    ///     Checks if the removal of all entities works correctly. 
+    ///     Checks if the removal of all entities works correctly.
     /// </summary>
     [Test]
     public void ChunkRemoveAll()
@@ -95,7 +95,7 @@ public class ChunkTest
     }
 
     /// <summary>
-    ///     Checks if removing and setting an entity works correctly. 
+    ///     Checks if removing and setting an entity works correctly.
     /// </summary>
     [Test]
     public void ChunkRemoveAndSetAgain()
@@ -115,5 +115,29 @@ public class ChunkTest
         That(_chunk.Size, Is.EqualTo(2));
         That(_chunk.Entities[0].Id, Is.EqualTo(2)); // Needs to be 1, because it will be the last one getting removed and being moved to that position
         That(_chunk.Entities[1].Id, Is.EqualTo(1)); // Needs to be 1, because it will be the last one getting removed and being moved to that position
+    }
+
+    /// <summary>
+    ///     Checks if chunk has a component.
+    /// </summary>
+    [Test]
+    public void ChunkHas()
+    {
+        _chunk = new Chunk(1000, _types);
+
+        for (var index = 0; index < _chunk.Capacity; index++)
+        {
+            var entity = new Entity(index, 0);
+            _chunk.Add(entity);
+
+            var t = new Transform();
+            var r = new Rotation();
+            _chunk.Set(index, t);
+            _chunk.Set(index, r);
+        }
+
+        That(_chunk.Has<Transform>(), Is.True);
+        That(_chunk.Has<Ai>(), Is.False);
+        That(_chunk.Has<Rotation>(), Is.True);
     }
 }

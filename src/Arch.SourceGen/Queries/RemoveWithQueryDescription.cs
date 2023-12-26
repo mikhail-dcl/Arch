@@ -43,6 +43,7 @@ public static class RemoveWithQueryDesription
             $$"""
             [SkipLocalsInit]
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            [StructuralChange]
             public void Remove<{{generics}}>(in QueryDescription queryDescription)
             {
                 // BitSet to stack/span bitset, size big enough to contain ALL registered components.
@@ -52,7 +53,7 @@ public static class RemoveWithQueryDesription
                 foreach (var archetype in query.GetArchetypeIterator())
                 {
                     // Archetype without T shouldnt be skipped to prevent undefined behaviour.
-                    if(archetype.Entities <= 0 || !archetype.Has<{{generics}}>())
+                    if(archetype.EntityCount <= 0 || !archetype.Has<{{generics}}>())
                     {
                         continue;
                     }

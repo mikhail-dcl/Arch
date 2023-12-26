@@ -19,11 +19,13 @@ public static class StructuralChangesExtensions
         var inParameters = new StringBuilder().InsertGenericInParams(amount);
         var types = new StringBuilder().GenericTypeParams(amount);
 
+        var getIds = new StringBuilder();
         var setIds = new StringBuilder();
         var addEvents = new StringBuilder();
         for (var index = 0; index <= amount; index++)
         {
-            setIds.AppendLine($"spanBitSet.SetBit(Component<T{index}>.ComponentType.Id);");
+            getIds.AppendLine($"var id{index} = Component<T{index}>.ComponentType.Id;");
+            setIds.AppendLine($"spanBitSet.SetBit(id{index});");
             addEvents.AppendLine($"OnComponentAdded<T{index}>(entity);");
         }
 
@@ -31,9 +33,13 @@ public static class StructuralChangesExtensions
             $$"""
             [SkipLocalsInit]
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            [StructuralChange]
             public void Add<{{generics}}>(Entity entity, {{parameters}})
             {
                 var oldArchetype = EntityInfo.GetArchetype(entity.Id);
+
+                // Get all the ids here just in case we are adding a new component as this will grow the ComponentRegistry.Size
+                {{getIds}}
 
                 // BitSet to stack/span bitset, size big enough to contain ALL registered components.
                 Span<uint> stack = stackalloc uint[BitSet.RequiredLength(ComponentRegistry.Size)];
@@ -82,6 +88,7 @@ public static class StructuralChangesExtensions
             $$"""
             [SkipLocalsInit]
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            [StructuralChange]
             public void Remove<{{generics}}>(Entity entity)
             {
                 var oldArchetype = EntityInfo.GetArchetype(entity.Id);
