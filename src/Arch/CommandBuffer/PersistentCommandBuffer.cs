@@ -1,11 +1,11 @@
 ﻿using Arch.Core;
-using Arch.Core.Extensions;
 using Arch.Core.Utils;
+using Collections.Pooled;
 
-namespace Arch.CommandBuffer;
+namespace Arch.Buffer;
 
 /// <summary>
-///     Right the same as <see cref="CommandBuffer"/> but does use Pooled Collections under the hood.
+///     Right the same as <see cref="CommandBuffer"/> but doesn't use Pooled Collections under the hood.
 ///     It's meant to be reused multiple times when the Shared Pooling Behaviour is undesirable.
 /// </summary>
 public class PersistentCommandBuffer : IDisposable
@@ -17,11 +17,9 @@ public class PersistentCommandBuffer : IDisposable
     ///     Initializes a new instance of the <see cref="CommandBuffer"/> class
     ///     with the specified <see cref="Core.World"/> and an optional <paramref name="initialCapacity"/> (default: 128).
     /// </summary>
-    /// <param name="world">The <see cref="World"/>.</param>
-    /// <param name="initialCapacity">The <see cref="initialCapacity"/>.</param>
-    public PersistentCommandBuffer(World world, int initialCapacity = 128)
+    /// <param name="initialCapacity">The initial capacity.</param>
+    public PersistentCommandBuffer(int initialCapacity = 128)
     {
-        World = world;
         Entities = new List<Entity>(initialCapacity);
         BufferedEntityInfo = new Dictionary<int, BufferedEntityInfo>(initialCapacity);
         Creates = new List<CreateCommand>(initialCapacity);
@@ -32,11 +30,6 @@ public class PersistentCommandBuffer : IDisposable
         _addTypes = new List<ComponentType>(16);
         _removeTypes = new List<ComponentType>(16);
     }
-
-    /// <summary>
-    ///     Gets the <see cref="Core.World"/>.
-    /// </summary>
-    public World World { get; }
 
     /// <summary>
     ///     Gets the amount of <see cref="Entity"/> instances targeted by this <see cref="CommandBuffer"/>.
@@ -80,11 +73,11 @@ public class PersistentCommandBuffer : IDisposable
 
     /// <summary>
     ///     Registers a new <see cref="Entity"/> into the <see cref="CommandBuffer"/>.
-    ///     An <see langword="out"/> parameter contains its <see cref="Arch.CommandBuffer.BufferedEntityInfo"/>.
+    ///     An <see langword="out"/> parameter contains its <see cref="Arch.Buffer.BufferedEntityInfo"/>.
     /// </summary>
     /// <param name="entity">The <see cref="Entity"/> to register.</param>
     /// <param name="info">Its <see cref="BufferedEntityInfo"/> which stores indexes used for <see cref="CommandBuffer"/> operations.</param>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+
     internal void Register(in Entity entity, out BufferedEntityInfo info)
     {
         var setIndex = Sets.Create(in entity);
@@ -98,18 +91,33 @@ public class PersistentCommandBuffer : IDisposable
         Size++;
     }
 
+    /// TODO : Probably just run this if the wrapped entity is negative? To save some overhead?
+    /// <summary>
+    ///     Resolves an <see cref="Entity"/> originally either from a <see cref="StructuralSparseArray"/> or <see cref="SparseArray"/> to its real <see cref="Entity"/>.
+    ///     This is required since we can also create new entities via this buffer and buffer operations for it. So sometimes there negative entities stored in the arrays and those must then be resolved to its newly created real entity.
+    ///     <remarks>Probably hard to understand, blame genaray for this.</remarks>
+    /// </summary>
+    /// <param name="entity">The <see cref="Entity"/> with a negative or positive id to resolve.</param>
+    /// <returns>Its real <see cref="Entity"/>.</returns>
+
+    internal Entity Resolve(Entity entity)
+    {
+        var entityIndex = BufferedEntityInfo[entity.Id].Index;
+        return Entities[entityIndex];
+    }
+
     /// <summary>
     ///     Records a Create operation for an <see cref="Entity"/> based on its component structure.
     ///     Will be created during <see cref="Playback"/>.
     /// </summary>
     /// <param name="types">The <see cref="Entity"/>'s component structure/<see cref="Archetype"/>.</param>
     /// <returns>The buffered <see cref="Entity"/> with an index of <c>-1</c>.</returns>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+
     public Entity Create(ComponentType[] types)
     {
         lock (this)
         {
-            var entity = new Entity(-Math.Abs(Size - 1), World.Id);
+            var entity = new Entity(-(Size + 1), -1);
             Register(entity, out _);
 
             var command = new CreateCommand(Size - 1, types);
@@ -124,7 +132,7 @@ public class PersistentCommandBuffer : IDisposable
     ///     Will be destroyed during <see cref="Playback"/>.
     /// </summary>
     /// <param name="entity">The <see cref="Entity"/> to destroy.</param>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+
     public void Destroy(in Entity entity)
     {
         lock (this)
@@ -146,8 +154,8 @@ public class PersistentCommandBuffer : IDisposable
     /// <typeparam name="T">The component type.</typeparam>
     /// <param name="entity">The <see cref="Entity"/>.</param>
     /// <param name="component">The component value.</param>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Set<T>(in Entity entity, in T component = default)
+
+    public void Set<T>(in Entity entity, in T? component = default)
     {
         BufferedEntityInfo info;
         lock (this)
@@ -169,8 +177,8 @@ public class PersistentCommandBuffer : IDisposable
     /// <typeparam name="T">The component type.</typeparam>
     /// <param name="entity">The <see cref="Entity"/>.</param>
     /// <param name="component">The component value.</param>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Add<T>(in Entity entity, in T component = default)
+
+    public void Add<T>(in Entity entity, in T? component = default)
     {
         BufferedEntityInfo info;
         lock (this)
@@ -191,7 +199,7 @@ public class PersistentCommandBuffer : IDisposable
     /// </summary>
     /// <typeparam name="T">The component type.</typeparam>
     /// <param name="entity">The <see cref="Entity"/>.</param>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+
     public void Remove<T>(in Entity entity)
     {
         BufferedEntityInfo info;
@@ -212,13 +220,15 @@ public class PersistentCommandBuffer : IDisposable
     /// <remarks>
     ///     This operation should only happen on the main thread.
     /// </remarks>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Playback()
+    /// <param name="world">The <see cref="World"/> where the commands will be playbacked too.</param>
+    /// <param name="dispose">If true it will clear the recorded operations after they were playbacked, if not they will stay.</param>
+
+    public void Playback(World world, bool dispose = true)
     {
         // Create recorded entities.
         foreach (var cmd in Creates)
         {
-            var entity = World.Create(cmd.Types);
+            var entity = world.Create(cmd.Types);
             Entities[cmd.Index] = entity;
         }
 
@@ -228,8 +238,8 @@ public class PersistentCommandBuffer : IDisposable
             var wrappedEntity = Adds.Entities[index];
             for (var i = 0; i < Adds.UsedSize; i++)
             {
-                ref var usedIndex = ref Adds.Used[i];
-                ref var sparseSet = ref Adds.Components[usedIndex];
+                var usedIndex = Adds.Used[i];
+                var sparseSet = Adds.Components[usedIndex];
 
                 if (!sparseSet.Contains(wrappedEntity.Index))
                 {
@@ -244,9 +254,11 @@ public class PersistentCommandBuffer : IDisposable
                 continue;
             }
 
-            var entityIndex = BufferedEntityInfo[wrappedEntity.Entity.Id].Index;
-            var entity = Entities[entityIndex];
-            World.AddRange(entity, (IList<ComponentType>)_addTypes);
+            // Resolves the entity to get the real one (e.g. for newly created negative entities and stuff).
+            var entity = Resolve(wrappedEntity.Entity);
+            Debug.Assert(world.IsAlive(entity), $"CommandBuffer can not to add components to the dead {wrappedEntity.Entity}");
+
+            CommandBuffer.AddRange(world, entity, _addTypes.AsSpan());
             _addTypes.Clear();
         }
 
@@ -255,12 +267,13 @@ public class PersistentCommandBuffer : IDisposable
         {
             // Get wrapped entity
             var wrappedEntity = Sets.Entities[index];
-            var entityIndex = BufferedEntityInfo[wrappedEntity.Entity.Id].Index;
-            var entity = Entities[entityIndex];
-            ref readonly var id = ref wrappedEntity.Index;
+            var entity = Resolve(wrappedEntity.Entity);
+            var id = wrappedEntity.Index;
+
+            Debug.Assert(world.IsAlive(entity), $"CommandBuffer can not to set components to the dead {wrappedEntity.Entity}");
 
             // Get entity chunk
-            var entityInfo = World.EntityInfo[entity.Id];
+            var entityInfo = world.EntityInfo.GetEntityData(entity.Id);
             var archetype = entityInfo.Archetype;
             ref readonly var chunk = ref archetype.GetChunk(entityInfo.Slot.ChunkIndex);
             var chunkIndex = entityInfo.Slot.Index;
@@ -278,6 +291,18 @@ public class PersistentCommandBuffer : IDisposable
 
                 var chunkArray = chunk.GetArray(sparseArray.Type);
                 Array.Copy(sparseArray.Components, sparseArray.Entities[id], chunkArray, chunkIndex, 1);
+
+#if EVENTS
+                // Entity also exists in add and the set component was added recently
+                if (Adds.Used.Length > i && Adds.Components[Adds.Used[i]].Contains(id))
+                {
+                    world.OnComponentAdded(entity, sparseArray.Type);
+                }
+                else
+                {
+                    world.OnComponentSet(entity, sparseArray.Type);
+                }
+#endif
             }
         }
 
@@ -287,8 +312,8 @@ public class PersistentCommandBuffer : IDisposable
             var wrappedEntity = Removes.Entities[index];
             for (var i = 0; i < Removes.UsedSize; i++)
             {
-                ref var usedIndex = ref Removes.Used[i];
-                ref var sparseSet = ref Removes.Components[usedIndex];
+                var usedIndex = Removes.Used[i];
+                var sparseSet = Removes.Components[usedIndex];
                 if (!sparseSet.Contains(wrappedEntity.Index))
                 {
                     continue;
@@ -302,31 +327,35 @@ public class PersistentCommandBuffer : IDisposable
                 continue;
             }
 
-            var entityIndex = BufferedEntityInfo[wrappedEntity.Entity.Id].Index;
-            var entity = Entities[entityIndex];
-            World.RemoveRange(entity, _removeTypes);
+            var entity = Resolve(wrappedEntity.Entity);
+            Debug.Assert(world.IsAlive(entity), $"CommandBuffer can not to remove components from the dead {wrappedEntity.Entity}");
 
+            world.RemoveRange(entity, _removeTypes.AsSpan());
             _removeTypes.Clear();
         }
-
 
         // Play back destructions.
         foreach (var cmd in Destroys)
         {
-            World.Destroy(Entities[cmd]);
+            world.Destroy(Entities[cmd]);
         }
 
         // Reset values.
+        if (!dispose)
+        {
+            return;
+        }
+
         Size = 0;
-        Entities?.Clear();
-        BufferedEntityInfo?.Clear();
-        Creates?.Clear();
-        Sets?.Clear();
-        Adds?.Clear();
-        Removes?.Clear();
-        Destroys?.Clear();
-        _addTypes?.Clear();
-        _removeTypes?.Clear();
+        Entities.Clear();
+        BufferedEntityInfo.Clear();
+        Creates.Clear();
+        Sets.Clear();
+        Adds.Clear();
+        Removes.Clear();
+        Destroys.Clear();
+        _addTypes.Clear();
+        _removeTypes.Clear();
     }
 
     /// <summary>
@@ -334,14 +363,10 @@ public class PersistentCommandBuffer : IDisposable
     /// </summary>
     public void Dispose()
     {
-        Entities?.Clear();
-        BufferedEntityInfo?.Clear();
-        Creates?.Clear();
-        Sets?.Clear();
-        Adds?.Clear();
-        Removes?.Clear();
-        Destroys?.Clear();
-        _addTypes?.Clear();
-        _removeTypes?.Clear();
+        Creates.Clear();
+        Sets.Clear();
+        Adds.Clear();
+        Removes.Clear();
+        GC.SuppressFinalize(this);
     }
 }
