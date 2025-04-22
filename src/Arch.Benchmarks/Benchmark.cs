@@ -1,6 +1,7 @@
 using System.Numerics;
 using Arch.Core;
 using Arch.Core.Extensions;
+using Arch.Core.Utils;
 
 namespace Arch.Benchmarks;
 
