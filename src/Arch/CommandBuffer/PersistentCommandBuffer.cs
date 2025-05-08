@@ -1,4 +1,5 @@
 ﻿using Arch.Core;
+using Arch.Core.Utils;
 
 namespace Arch.Buffer;
 
@@ -8,8 +9,8 @@ namespace Arch.Buffer;
 /// </summary>
 public class PersistentCommandBuffer : IDisposable
 {
-    private readonly List<ComponentType> _addTypes;
-    private readonly List<ComponentType> _removeTypes;
+    private readonly NetStandardList<ComponentType> _addTypes;
+    private readonly NetStandardList<ComponentType> _removeTypes;
 
     /// <summary>
     ///     Initializes a new instance of the <see cref="CommandBuffer"/> class
@@ -25,8 +26,8 @@ public class PersistentCommandBuffer : IDisposable
         Adds = new StructuralSparseSet(initialCapacity);
         Removes = new StructuralSparseSet(initialCapacity);
         Destroys = new List<int>(initialCapacity);
-        _addTypes = new List<ComponentType>(16);
-        _removeTypes = new List<ComponentType>(16);
+        _addTypes = new NetStandardList<ComponentType>(16);
+        _removeTypes = new NetStandardList<ComponentType>(16);
     }
 
     /// <summary>
