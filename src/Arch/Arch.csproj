@@ -41,17 +41,17 @@
   </PropertyGroup>
 
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
-    <DefineConstants>TRACE;</DefineConstants>
+    <DefineConstants>TRACE;DEBUG</DefineConstants>
     <Optimize>false</Optimize>
     <PlatformTarget>AnyCPU</PlatformTarget>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)'=='Debug-PureECS'">
-    <DefineConstants>TRACE;PURE_ECS;</DefineConstants>
+    <DefineConstants>TRACE;PURE_ECS;DEBUG</DefineConstants>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)'=='Debug-Events'">
-    <DefineConstants>TRACE;EVENTS;</DefineConstants>
+    <DefineConstants>TRACE;EVENTS;DEBUG</DefineConstants>
   </PropertyGroup>
 
   <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
